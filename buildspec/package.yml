@@ -1,6 +1,12 @@
 version: 0.2
 
 phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - python3 -m pip install --user --disable-pip-version-check cfn-lint
+      - export PATH="$HOME/.local/bin:$PATH"
   build:
     commands:
       - |
