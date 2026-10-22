@@ -1,8 +1,36 @@
 version: 0.2
+
 phases:
   build:
     commands:
-      - aws cloudformation package --template-file templates/root.yaml --s3-bucket "$TEMPLATE_BUCKET" --s3-prefix packaged-templates --output-template-file packaged-root.yaml --region "$AWS_DEFAULT_REGION"
+      - |
+        set -euo pipefail
+
+        : "${TEMPLATE_BUCKET:?TEMPLATE_BUCKET is required}"
+        : "${AWS_DEFAULT_REGION:?AWS_DEFAULT_REGION is required}"
+
+        echo "Packaging nested CloudFormation templates..."
+
+        aws cloudformation package \
+          --template-file templates/root.yaml \
+          --s3-bucket "$TEMPLATE_BUCKET" \
+          --s3-prefix packaged-templates \
+          --output-template-file packaged-root.yaml \
+          --region "$AWS_DEFAULT_REGION"
+
+        echo "Checking packaged template exists..."
+        test -s packaged-root.yaml
+
+        echo "Linting packaged template..."
+        cfn-lint packaged-root.yaml
+
+        echo "Validating packaged template with CloudFormation..."
+        aws cloudformation validate-template \
+          --template-body file://packaged-root.yaml \
+          --region "$AWS_DEFAULT_REGION"
+
+        echo "Packaging and validation completed successfully."
+
 artifacts:
   files:
     - packaged-root.yaml
