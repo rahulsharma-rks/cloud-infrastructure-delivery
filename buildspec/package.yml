@@ -8,3 +8,4 @@ artifacts:
     - packaged-root.yaml
     - parameters/dev.json
     - scripts/smoke-test.sh
+    - buildspec/smoke-test.yml

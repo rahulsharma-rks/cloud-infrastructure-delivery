@@ -1,0 +1,9 @@
+version: 0.2
+phases:
+  build:
+    commands:
+      - chmod +x scripts/smoke-test.sh
+      - ./scripts/smoke-test.sh
+artifacts:
+  files:
+    - scripts/smoke-test.sh

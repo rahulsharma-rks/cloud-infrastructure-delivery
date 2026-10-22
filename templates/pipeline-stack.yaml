@@ -86,6 +86,9 @@ Resources:
               - Effect: Allow
                 Action: cloudformation:ValidateTemplate
                 Resource: '*'
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ApplicationStackName}/*'
   CloudFormationExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -166,6 +169,9 @@ Resources:
                 Action: [codebuild:StartBuild, codebuild:BatchGetBuilds]
                 Resource: !GetAtt PackageProject.Arn
               - Effect: Allow
+                Action: [codebuild:StartBuild, codebuild:BatchGetBuilds]
+                Resource: !GetAtt SmokeTestProject.Arn
+              - Effect: Allow
                 Action:
                   - cloudformation:CreateChangeSet
                   - cloudformation:DescribeChangeSet
@@ -217,6 +223,26 @@ Resources:
       Source:
         Type: CODEPIPELINE
         BuildSpec: buildspec/package.yml
+      TimeoutInMinutes: 10
+  SmokeTestProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-smoke-test'
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts: {Type: CODEPIPELINE}
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: STACK_NAME
+            Value: !Ref ApplicationStackName
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec/smoke-test.yml
       TimeoutInMinutes: 10
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -311,6 +337,19 @@ Resources:
                 ActionMode: CHANGE_SET_EXECUTE
                 StackName: !Ref ApplicationStackName
                 ChangeSetName: !Sub '${ProjectName}-approved-change'
+              RunOrder: 1
+        - Name: SmokeTest
+          Actions:
+            - Name: VerifyDeployment
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              InputArtifacts: [{Name: PackagedArtifact}]
+              OutputArtifacts: [{Name: SmokeTestArtifact}]
+              Configuration:
+                ProjectName: !Ref SmokeTestProject
               RunOrder: 1
 Outputs:
   PipelineName:
