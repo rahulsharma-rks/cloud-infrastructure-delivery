@@ -11,7 +11,7 @@ Parameters:
     Type: String
   GitHubRepository:
     Type: String
-    Default: aws-cloudformation-production-portfolio
+    Default: cloud-infrastructure-delivery
   GitHubBranch:
     Type: String
     Default: main
@@ -157,7 +157,7 @@ Resources:
                   - !GetAtt ArtifactBucket.Arn
                   - !Sub '${ArtifactBucket.Arn}/*'
               - Effect: Allow
-                Action: [codestar-connections:UseConnection]
+                Action: [codeconnections:UseConnection]
                 Resource: !Ref GitHubConnectionArn
               - Effect: Allow
                 Action: [codebuild:StartBuild, codebuild:BatchGetBuilds]
