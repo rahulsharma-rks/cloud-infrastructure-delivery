@@ -84,3 +84,5 @@ The CodePipeline source stage is configured to detect pushes to the
 `main` branch through AWS CodeConnections. The pipeline validates and
 packages templates, prepares a CloudFormation change set, and pauses
 for manual approval before deployment.
+
+<!-- GitHub push-trigger verification: 2026-10-22 -->
