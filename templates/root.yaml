@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Root stack orchestrating network and application nested stacks.
+Parameters:
+  ProjectName:
+    Type: String
+    Default: cfn-platform
+    AllowedPattern: '^[a-z][a-z0-9-]{2,19}$'
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test]
+  NatGatewayEnabled:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t3.micro, t3.small]
+  DesiredCapacity:
+    Type: Number
+    Default: 2
+    MinValue: 2
+    MaxValue: 4
+Resources:
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: network.yaml
+      Parameters:
+        ProjectName: !Ref ProjectName
+        EnvironmentName: !Ref EnvironmentName
+        NatGatewayEnabled: !Ref NatGatewayEnabled
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref EnvironmentName
+  ApplicationStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: application.yaml
+      Parameters:
+        ProjectName: !Ref ProjectName
+        EnvironmentName: !Ref EnvironmentName
+        VpcId: !GetAtt NetworkStack.Outputs.VpcId
+        PublicSubnetA: !Select [0, !Split [',', !GetAtt NetworkStack.Outputs.PublicSubnetIds]]
+        PublicSubnetB: !Select [1, !Split [',', !GetAtt NetworkStack.Outputs.PublicSubnetIds]]
+        PrivateSubnetA: !GetAtt NetworkStack.Outputs.PrivateSubnetA
+        PrivateSubnetB: !GetAtt NetworkStack.Outputs.PrivateSubnetB
+        InstanceType: !Ref InstanceType
+        DesiredCapacity: !Ref DesiredCapacity
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref EnvironmentName
+Outputs:
+  ApplicationURL:
+    Value: !GetAtt ApplicationStack.Outputs.ApplicationURL
+  VpcId:
+    Value: !GetAtt NetworkStack.Outputs.VpcId
+  AutoScalingGroupName:
+    Value: !GetAtt ApplicationStack.Outputs.AutoScalingGroupName

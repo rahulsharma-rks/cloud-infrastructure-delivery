@@ -1,0 +1,3 @@
+# Nested templates use local paths before CloudFormation packaging.
+ignore_checks:
+  - W3002

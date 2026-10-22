@@ -1,0 +1,10 @@
+version: 0.2
+phases:
+  build:
+    commands:
+      - aws cloudformation package --template-file templates/root.yaml --s3-bucket "$TEMPLATE_BUCKET" --s3-prefix packaged-templates --output-template-file packaged-root.yaml --region "$AWS_DEFAULT_REGION"
+artifacts:
+  files:
+    - packaged-root.yaml
+    - parameters/dev.json
+    - scripts/smoke-test.sh

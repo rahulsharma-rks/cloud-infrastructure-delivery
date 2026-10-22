@@ -1,0 +1,323 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CodePipeline for CloudFormation validation, packaging, change-set approval and execution.
+Parameters:
+  ProjectName:
+    Type: String
+    Default: cfn-platform
+  GitHubConnectionArn:
+    Type: String
+    Description: ARN of an AVAILABLE CodeConnections connection to GitHub.
+  GitHubOwner:
+    Type: String
+  GitHubRepository:
+    Type: String
+    Default: aws-cloudformation-production-portfolio
+  GitHubBranch:
+    Type: String
+    Default: main
+  ApplicationStackName:
+    Type: String
+    Default: cfn-platform-dev
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test]
+Resources:
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+  TemplateBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: BuildLogsAndTemplatePackaging
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Resource: '*'
+              - Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
+                Resource:
+                  - !Sub '${ArtifactBucket.Arn}/*'
+                  - !Sub '${TemplateBucket.Arn}/*'
+              - Effect: Allow
+                Action: [s3:GetBucketLocation, s3:ListBucket]
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !GetAtt TemplateBucket.Arn
+              - Effect: Allow
+                Action: cloudformation:ValidateTemplate
+                Resource: '*'
+  CloudFormationExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PortfolioStackProvisioningLabPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # LAB POLICY: intentionally broad for the declared template resource types.
+              # Narrow Resource and Action permissions before using beyond a dedicated lab account.
+              - Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion]
+                Resource: !Sub '${TemplateBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - ec2:*
+                  - elasticloadbalancing:*
+                  - autoscaling:*
+                  - cloudformation:*
+                  - logs:CreateLogGroup
+                  - logs:PutRetentionPolicy
+                  - logs:DeleteLogGroup
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:AddRoleToInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:GetInstanceProfile
+                  - iam:PassRole
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListInstanceProfilesForRole
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: '*'
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PipelineActions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject, s3:GetBucketVersioning]
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub '${ArtifactBucket.Arn}/*'
+              - Effect: Allow
+                Action: [codestar-connections:UseConnection]
+                Resource: !Ref GitHubConnectionArn
+              - Effect: Allow
+                Action: [codebuild:StartBuild, codebuild:BatchGetBuilds]
+                Resource: !GetAtt ValidateProject.Arn
+              - Effect: Allow
+                Action: [codebuild:StartBuild, codebuild:BatchGetBuilds]
+                Resource: !GetAtt PackageProject.Arn
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResource
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:ListChangeSets
+                Resource: '*'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt CloudFormationExecutionRole.Arn
+  ValidateProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-validate'
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts: {Type: CODEPIPELINE}
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec/validate.yml
+      TimeoutInMinutes: 10
+  PackageProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-package'
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts: {Type: CODEPIPELINE}
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: TEMPLATE_BUCKET
+            Value: !Ref TemplateBucket
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec/package.yml
+      TimeoutInMinutes: 10
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub '${ProjectName}-pipeline'
+      RoleArn: !GetAtt PipelineRole.Arn
+      PipelineType: V2
+      ExecutionMode: QUEUED
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHub
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: '1'
+              OutputArtifacts: [{Name: SourceArtifact}]
+              Configuration:
+                ConnectionArn: !Ref GitHubConnectionArn
+                FullRepositoryId: !Sub '${GitHubOwner}/${GitHubRepository}'
+                BranchName: !Ref GitHubBranch
+                DetectChanges: 'true'
+              RunOrder: 1
+        - Name: Validate
+          Actions:
+            - Name: ValidateTemplates
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              InputArtifacts: [{Name: SourceArtifact}]
+              OutputArtifacts: [{Name: ValidatedArtifact}]
+              Configuration:
+                ProjectName: !Ref ValidateProject
+              RunOrder: 1
+        - Name: Package
+          Actions:
+            - Name: PackageNestedTemplates
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              InputArtifacts: [{Name: ValidatedArtifact}]
+              OutputArtifacts: [{Name: PackagedArtifact}]
+              Configuration:
+                ProjectName: !Ref PackageProject
+              RunOrder: 1
+        - Name: CreateChangeSet
+          Actions:
+            - Name: PrepareApplicationChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              InputArtifacts: [{Name: PackagedArtifact}]
+              Configuration:
+                ActionMode: CHANGE_SET_REPLACE
+                StackName: !Ref ApplicationStackName
+                ChangeSetName: !Sub '${ProjectName}-approved-change'
+                TemplatePath: PackagedArtifact::packaged-root.yaml
+                ParameterOverrides: !Sub '{"ProjectName":"${ProjectName}","EnvironmentName":"${EnvironmentName}","NatGatewayEnabled":"true","InstanceType":"t3.micro","DesiredCapacity":"2"}'
+                Capabilities: CAPABILITY_IAM
+                RoleArn: !GetAtt CloudFormationExecutionRole.Arn
+              RunOrder: 1
+        - Name: Approval
+          Actions:
+            - Name: ApproveInfrastructureChange
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              Configuration:
+                CustomData: Review the CloudFormation change set and confirm no unexpected replacement or deletion before execution.
+              RunOrder: 1
+        - Name: ExecuteChangeSet
+          Actions:
+            - Name: ExecuteApprovedChange
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                StackName: !Ref ApplicationStackName
+                ChangeSetName: !Sub '${ProjectName}-approved-change'
+              RunOrder: 1
+Outputs:
+  PipelineName:
+    Value: !Ref Pipeline
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket
+  TemplateBucketName:
+    Value: !Ref TemplateBucket
+  CloudFormationExecutionRoleArn:
+    Value: !GetAtt CloudFormationExecutionRole.Arn

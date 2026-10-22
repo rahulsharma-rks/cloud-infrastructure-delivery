@@ -1,0 +1,19 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - pip install --disable-pip-version-check cfn-lint
+  build:
+    commands:
+      - cfn-lint templates/*.yaml
+      - aws cloudformation validate-template --template-body file://templates/network.yaml --region "$AWS_DEFAULT_REGION"
+      - aws cloudformation validate-template --template-body file://templates/application.yaml --region "$AWS_DEFAULT_REGION"
+      - aws cloudformation validate-template --template-body file://templates/root.yaml --region "$AWS_DEFAULT_REGION"
+      - aws cloudformation validate-template --template-body file://templates/pipeline-stack.yaml --region "$AWS_DEFAULT_REGION"
+      - python -m json.tool parameters/dev.json >/dev/null
+artifacts:
+  files:
+    - '**/*'
+  discard-paths: no

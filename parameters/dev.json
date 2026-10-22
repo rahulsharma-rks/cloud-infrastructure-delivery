@@ -1,0 +1,7 @@
+[
+  {"ParameterKey":"ProjectName","ParameterValue":"cfn-platform"},
+  {"ParameterKey":"EnvironmentName","ParameterValue":"dev"},
+  {"ParameterKey":"NatGatewayEnabled","ParameterValue":"true"},
+  {"ParameterKey":"InstanceType","ParameterValue":"t3.micro"},
+  {"ParameterKey":"DesiredCapacity","ParameterValue":"2"}
+]
