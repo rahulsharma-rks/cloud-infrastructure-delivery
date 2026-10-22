@@ -132,13 +132,18 @@ Resources:
                   - iam:AddRoleToInstanceProfile
                   - iam:RemoveRoleFromInstanceProfile
                   - iam:GetInstanceProfile
-                  - iam:PassRole
                   - iam:ListRolePolicies
                   - iam:ListAttachedRolePolicies
                   - iam:ListInstanceProfilesForRole
                   - ssm:GetParameter
                   - ssm:GetParameters
                 Resource: '*'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApplicationStackName}-ApplicationStack-*-InstanceRole-*'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ec2.amazonaws.com
   PipelineRole:
     Type: AWS::IAM::Role
     Properties:
@@ -186,6 +191,9 @@ Resources:
               - Effect: Allow
                 Action: iam:PassRole
                 Resource: !GetAtt CloudFormationExecutionRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: cloudformation.amazonaws.com
   ValidateProject:
     Type: AWS::CodeBuild::Project
     Properties:

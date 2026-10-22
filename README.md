@@ -77,3 +77,10 @@ Set a budget alert before deployment. ALB, NAT Gateway, EC2, EBS, CodeBuild, S3,
 - SSM VPC endpoints to reduce NAT dependency
 - Canary or blue/green application deployment
 - Separate dev and prod accounts with StackSets
+
+## CI/CD Trigger Verification
+
+The CodePipeline source stage is configured to detect pushes to the
+`main` branch through AWS CodeConnections. The pipeline validates and
+packages templates, prepares a CloudFormation change set, and pauses
+for manual approval before deployment.
