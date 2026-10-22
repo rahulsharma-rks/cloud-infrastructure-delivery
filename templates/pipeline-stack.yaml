@@ -1,27 +1,37 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: CodePipeline for CloudFormation validation, packaging, change-set approval and execution.
+
 Parameters:
   ProjectName:
     Type: String
     Default: cfn-platform
+
   GitHubConnectionArn:
     Type: String
     Description: ARN of an AVAILABLE CodeConnections connection to GitHub.
+
   GitHubOwner:
     Type: String
+
   GitHubRepository:
     Type: String
     Default: cloud-infrastructure-delivery
+
   GitHubBranch:
     Type: String
     Default: main
+
   ApplicationStackName:
     Type: String
     Default: cfn-platform-dev
+
   EnvironmentName:
     Type: String
     Default: dev
-    AllowedValues: [dev, test]
+    AllowedValues:
+      - dev
+      - test
+
 Resources:
   ArtifactBucket:
     Type: AWS::S3::Bucket
@@ -39,6 +49,7 @@ Resources:
         IgnorePublicAcls: true
         BlockPublicPolicy: true
         RestrictPublicBuckets: true
+
   TemplateBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -55,6 +66,7 @@ Resources:
         IgnorePublicAcls: true
         BlockPublicPolicy: true
         RestrictPublicBuckets: true
+
   CodeBuildRole:
     Type: AWS::IAM::Role
     Properties:
@@ -71,24 +83,37 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
                 Resource: '*'
+
               - Effect: Allow
-                Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
                 Resource:
                   - !Sub '${ArtifactBucket.Arn}/*'
                   - !Sub '${TemplateBucket.Arn}/*'
+
               - Effect: Allow
-                Action: [s3:GetBucketLocation, s3:ListBucket]
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
                 Resource:
                   - !GetAtt ArtifactBucket.Arn
                   - !GetAtt TemplateBucket.Arn
+
               - Effect: Allow
                 Action: cloudformation:ValidateTemplate
                 Resource: '*'
+
               - Effect: Allow
                 Action: cloudformation:DescribeStacks
                 Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ApplicationStackName}/*'
+
   CloudFormationExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -104,11 +129,13 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              # LAB POLICY: intentionally broad for the declared template resource types.
-              # Narrow Resource and Action permissions before using beyond a dedicated lab account.
+              # Lab policy: narrow resources and actions before production use.
               - Effect: Allow
-                Action: [s3:GetObject, s3:GetObjectVersion]
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
                 Resource: !Sub '${TemplateBucket.Arn}/*'
+
               - Effect: Allow
                 Action:
                   - ec2:*
@@ -138,12 +165,24 @@ Resources:
                   - ssm:GetParameter
                   - ssm:GetParameters
                 Resource: '*'
+
+              # Allow passing application EC2 roles only to EC2.
               - Effect: Allow
                 Action: iam:PassRole
                 Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApplicationStackName}-ApplicationStack-*-InstanceRole-*'
                 Condition:
                   StringEquals:
                     iam:PassedToService: ec2.amazonaws.com
+
+              # Permit nested CloudFormation operations to pass this role.
+              # Construct the ARN to avoid a self-referencing resource dependency.
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AWS::StackName}-CloudFormationExecutionRole-*'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: cloudformation.amazonaws.com
+
   PipelineRole:
     Type: AWS::IAM::Role
     Properties:
@@ -160,22 +199,37 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject, s3:GetBucketVersioning]
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
                 Resource:
                   - !GetAtt ArtifactBucket.Arn
                   - !Sub '${ArtifactBucket.Arn}/*'
+
               - Effect: Allow
-                Action: [codeconnections:UseConnection]
+                Action: codeconnections:UseConnection
                 Resource: !Ref GitHubConnectionArn
+
               - Effect: Allow
-                Action: [codebuild:StartBuild, codebuild:BatchGetBuilds]
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
                 Resource: !GetAtt ValidateProject.Arn
+
               - Effect: Allow
-                Action: [codebuild:StartBuild, codebuild:BatchGetBuilds]
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
                 Resource: !GetAtt PackageProject.Arn
+
               - Effect: Allow
-                Action: [codebuild:StartBuild, codebuild:BatchGetBuilds]
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
                 Resource: !GetAtt SmokeTestProject.Arn
+
               - Effect: Allow
                 Action:
                   - cloudformation:CreateChangeSet
@@ -188,18 +242,22 @@ Resources:
                   - cloudformation:DescribeStackResources
                   - cloudformation:ListChangeSets
                 Resource: '*'
+
+              # Pipeline may pass only the execution role to CloudFormation.
               - Effect: Allow
                 Action: iam:PassRole
                 Resource: !GetAtt CloudFormationExecutionRole.Arn
                 Condition:
                   StringEquals:
                     iam:PassedToService: cloudformation.amazonaws.com
+
   ValidateProject:
     Type: AWS::CodeBuild::Project
     Properties:
       Name: !Sub '${ProjectName}-validate'
       ServiceRole: !GetAtt CodeBuildRole.Arn
-      Artifacts: {Type: CODEPIPELINE}
+      Artifacts:
+        Type: CODEPIPELINE
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
@@ -212,12 +270,14 @@ Resources:
         Type: CODEPIPELINE
         BuildSpec: buildspec/validate.yml
       TimeoutInMinutes: 10
+
   PackageProject:
     Type: AWS::CodeBuild::Project
     Properties:
       Name: !Sub '${ProjectName}-package'
       ServiceRole: !GetAtt CodeBuildRole.Arn
-      Artifacts: {Type: CODEPIPELINE}
+      Artifacts:
+        Type: CODEPIPELINE
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
@@ -232,12 +292,14 @@ Resources:
         Type: CODEPIPELINE
         BuildSpec: buildspec/package.yml
       TimeoutInMinutes: 10
+
   SmokeTestProject:
     Type: AWS::CodeBuild::Project
     Properties:
       Name: !Sub '${ProjectName}-smoke-test'
       ServiceRole: !GetAtt CodeBuildRole.Arn
-      Artifacts: {Type: CODEPIPELINE}
+      Artifacts:
+        Type: CODEPIPELINE
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
@@ -252,6 +314,7 @@ Resources:
         Type: CODEPIPELINE
         BuildSpec: buildspec/smoke-test.yml
       TimeoutInMinutes: 10
+
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
@@ -259,9 +322,20 @@ Resources:
       RoleArn: !GetAtt PipelineRole.Arn
       PipelineType: V2
       ExecutionMode: QUEUED
+
+      Triggers:
+        - ProviderType: CodeStarSourceConnection
+          GitConfiguration:
+            SourceActionName: GitHub
+            Push:
+              - Branches:
+                  Includes:
+                    - !Ref GitHubBranch
+
       ArtifactStore:
         Type: S3
         Location: !Ref ArtifactBucket
+
       Stages:
         - Name: Source
           Actions:
@@ -271,13 +345,15 @@ Resources:
                 Owner: AWS
                 Provider: CodeStarSourceConnection
                 Version: '1'
-              OutputArtifacts: [{Name: SourceArtifact}]
+              OutputArtifacts:
+                - Name: SourceArtifact
               Configuration:
                 ConnectionArn: !Ref GitHubConnectionArn
                 FullRepositoryId: !Sub '${GitHubOwner}/${GitHubRepository}'
                 BranchName: !Ref GitHubBranch
-                DetectChanges: 'true'
+                DetectChanges: 'false'
               RunOrder: 1
+
         - Name: Validate
           Actions:
             - Name: ValidateTemplates
@@ -286,11 +362,14 @@ Resources:
                 Owner: AWS
                 Provider: CodeBuild
                 Version: '1'
-              InputArtifacts: [{Name: SourceArtifact}]
-              OutputArtifacts: [{Name: ValidatedArtifact}]
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: ValidatedArtifact
               Configuration:
                 ProjectName: !Ref ValidateProject
               RunOrder: 1
+
         - Name: Package
           Actions:
             - Name: PackageNestedTemplates
@@ -299,11 +378,14 @@ Resources:
                 Owner: AWS
                 Provider: CodeBuild
                 Version: '1'
-              InputArtifacts: [{Name: ValidatedArtifact}]
-              OutputArtifacts: [{Name: PackagedArtifact}]
+              InputArtifacts:
+                - Name: ValidatedArtifact
+              OutputArtifacts:
+                - Name: PackagedArtifact
               Configuration:
                 ProjectName: !Ref PackageProject
               RunOrder: 1
+
         - Name: CreateChangeSet
           Actions:
             - Name: PrepareApplicationChangeSet
@@ -312,7 +394,8 @@ Resources:
                 Owner: AWS
                 Provider: CloudFormation
                 Version: '1'
-              InputArtifacts: [{Name: PackagedArtifact}]
+              InputArtifacts:
+                - Name: PackagedArtifact
               Configuration:
                 ActionMode: CHANGE_SET_REPLACE
                 StackName: !Ref ApplicationStackName
@@ -322,6 +405,7 @@ Resources:
                 Capabilities: CAPABILITY_IAM
                 RoleArn: !GetAtt CloudFormationExecutionRole.Arn
               RunOrder: 1
+
         - Name: Approval
           Actions:
             - Name: ApproveInfrastructureChange
@@ -333,6 +417,7 @@ Resources:
               Configuration:
                 CustomData: Review the CloudFormation change set and confirm no unexpected replacement or deletion before execution.
               RunOrder: 1
+
         - Name: ExecuteChangeSet
           Actions:
             - Name: ExecuteApprovedChange
@@ -346,6 +431,7 @@ Resources:
                 StackName: !Ref ApplicationStackName
                 ChangeSetName: !Sub '${ProjectName}-approved-change'
               RunOrder: 1
+
         - Name: SmokeTest
           Actions:
             - Name: VerifyDeployment
@@ -354,17 +440,23 @@ Resources:
                 Owner: AWS
                 Provider: CodeBuild
                 Version: '1'
-              InputArtifacts: [{Name: PackagedArtifact}]
-              OutputArtifacts: [{Name: SmokeTestArtifact}]
+              InputArtifacts:
+                - Name: PackagedArtifact
+              OutputArtifacts:
+                - Name: SmokeTestArtifact
               Configuration:
                 ProjectName: !Ref SmokeTestProject
               RunOrder: 1
+
 Outputs:
   PipelineName:
     Value: !Ref Pipeline
+
   ArtifactBucketName:
     Value: !Ref ArtifactBucket
+
   TemplateBucketName:
     Value: !Ref TemplateBucket
+
   CloudFormationExecutionRoleArn:
     Value: !GetAtt CloudFormationExecutionRole.Arn
